@@ -17,9 +17,9 @@ def fetch_fuel_data():
     else:
         # Giá niêm yết chuẩn kỳ điều hành thực tế mới nhất làm gốc vững chắc
         prices = {
-            "ron95_3": 27020,
-            "e5_ron92": 26970,
-            "do_005s": 29100
+            "ron95_3": 2020,
+            "e5_ron92": 2970,
+            "do_005s": 2100
         }
         
         # Thử kết nối nguồn dữ liệu API mở nội địa cập nhật theo thị trường
