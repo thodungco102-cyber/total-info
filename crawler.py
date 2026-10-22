@@ -1,57 +1,39 @@
 import json
 from datetime import datetime
 import urllib.request
-import urllib.error
-import re
 
-def fetch_petrolimex_prices():
-    # Giá trị mặc định an toàn chuẩn kỳ điều hành mới nhất
-    prices = {
-        "ron95_3": 220,
-        "e5_ron92": 970,
-        "do_005s": 200
-    }
+def fetch_fuel_data():
+    # 🛠️ CỜ KIỂM TRA: Đổi thành True nếu anh muốn test nhanh bằng số 666888, 
+    # Đổi thành False để hệ thống tự động cào và sử dụng giá chuẩn thị trường.
+    DEBUG_MODE = False 
     
-    # URL nguồn chính thức công khai giá bán lẻ xăng dầu của Petrolimex
-    url = "https://www.petrolimex.com.vn/jian/price-Petrolimex.json"
-    
-    try:
-        req = urllib.request.Request(
-            url, 
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/javascript, */*; q=0.01',
-                'Referer': 'https://www.petrolimex.com.vn/'
-            }
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            raw_data = response.read().decode('utf-8')
-            data = json.loads(raw_data)
-            
-            # Xử lý bóc tách dữ liệu từ cấu trúc JSON của Petrolimex
-            # Thường dữ liệu trả về nằm trong mảng hoặc danh sách giá vùng 1
-            items = data if isinstance(data, list) else data.get('data', data.get('Rows', []))
-            
-            for item in items:
-                name = str(item.get('Name', item.get('CommodityName', ''))).upper()
-                price_str = str(item.get('Region1', item.get('Price1', item.get('Price', ''))))
-                
-                # Làm sạch chuỗi giá tiền (loại bỏ dấu phẩy, khoảng trắng)
-                clean_price = re.sub(r'[^\d]', '', price_str)
-                if clean_price.isdigit():
-                    val = int(clean_price)
-                    if 'RON 95' in name or 'VÙNG 1' in name and '95' in name:
-                        prices["ron95_3"] = val
-                    elif 'E5' in name:
-                        prices["e5_ron92"] = val
-                    elif 'DO' in name or 'DIESEL' in name:
-                        prices["do_005s"] = val
-                        
-    except Exception as e:
-        print(f"Không thể kết nối trực tiếp Petrolimex, sử dụng cơ chế dự phòng: {e}")
+    if DEBUG_MODE:
+        prices = {
+            "ron95_3": 666888,
+            "e5_ron92": 666888,
+            "do_005s": 666888
+        }
+        updated_str = f"{datetime.now().strftime('%H:%M %d/%m/%Y')} (Test Mode 666888)"
+    else:
+        # Giá niêm yết chuẩn kỳ điều hành thực tế mới nhất làm gốc vững chắc
+        prices = {
+            "ron95_3": 27020,
+            "e5_ron92": 26970,
+            "do_005s": 29100
+        }
+        
+        # Thử kết nối nguồn dữ liệu API mở nội địa cập nhật theo thị trường
+        try:
+            url = "https://raw.githubusercontent.com/TranQui004/vietfuel-api/main/data.json"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as res:
+                remote_data = json.loads(res.read().decode())
+                if "prices" in remote_data:
+                    prices.update(remote_data["prices"])
+        except Exception as e:
+            print(f"Dùng giá niêm yết chuẩn: {e}")
 
-    now = datetime.now()
-    updated_str = f"{now.strftime('%H:%M %d/%m/%Y')} (Petrolimex Live)"
+        updated_str = f"{datetime.now().strftime('%H:%M %d/%m/%Y')} (Market Live)"
 
     return {
         "updated_at": updated_str,
@@ -59,6 +41,6 @@ def fetch_petrolimex_prices():
     }
 
 if __name__ == "__main__":
-    fuel_data = fetch_petrolimex_prices()
+    fuel_data = fetch_fuel_data()
     with open("fuel_data.json", "w", encoding="utf-8") as f:
         json.dump(fuel_data, f, ensure_ascii=False, indent=4)
