@@ -25,7 +25,7 @@ jobs:
 
       - name: Run crawler
         run: |
-          python crawl_fuel.py
+          python crawler.py
 
       - name: Push data to GitHub
         run: |
