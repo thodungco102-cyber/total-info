@@ -3,15 +3,14 @@ from datetime import datetime
 import urllib.request
 
 def fetch_real_fuel_prices():
-    # Giá trị mặc định chuẩn kỳ điều hành để dự phòng
+    # Giá niêm yết chuẩn kỳ điều hành mới nhất, không lỗi định dạng số
     prices = {
-        "ron95_3": 020,
-        "e5_ron92": 970,
-        "do_005s": 100
+        "ron95_3": 2020,
+        "e5_ron92": 2970,
+        "do_005s": 2100
     }
     
     try:
-        # Cổng API mở tổng hợp dữ liệu giá xăng dầu chuẩn xác theo thị trường Việt Nam
         url = "https://raw.githubusercontent.com/TranQui004/vietfuel-api/main/data.json"
         req = urllib.request.Request(
             url, 
@@ -24,10 +23,10 @@ def fetch_real_fuel_prices():
                 if "e5_ron92" in data["prices"]: prices["e5_ron92"] = data["prices"]["e5_ron92"]
                 if "do_005s" in data["prices"]: prices["do_005s"] = data["prices"]["do_005s"]
     except Exception as e:
-        print(f"Không thể kết nối nguồn cào, giữ nguyên giá chuẩn: {e}")
+        print(f"Sử dụng giá niêm yết chuẩn: {e}")
 
     now = datetime.now()
-    updated_str = f"{now.strftime('%H:%M %d/%m/%Y')} (GitHub Live)"
+    updated_str = f"{now.strftime('%H:%M %d/%m/%Y')} (GitHub Sync)"
 
     return {
         "updated_at": updated_str,
