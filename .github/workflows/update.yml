@@ -2,33 +2,35 @@ name: Update Fuel Data
 
 on:
   schedule:
-    - cron: '0 8 * * 4'
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 jobs:
-  update-data:
+  update:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install requests cloudscraper beautifulsoup4
-
-      - name: Run crawler script
-        run: python crawler.py
-
-      - name: Commit and push changes
+      - name: Install packages
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.io"
+          pip install -r requirements.txt
+
+      - name: Run crawler
+        run: |
+          python crawl_fuel.py
+
+      - name: Push data to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.io"
           git add fuel_data.json
-          git commit -m "Auto-update fuel data [skip ci]" || exit 0
+          git commit -m "Auto-update fuel data [skip ci]" || echo "No changes"
           git push
