@@ -1,8 +1,9 @@
 {
-    "updated_at": "19:50 22/10/2026 (GitHub Actions Live)",
+    "updated_at": "20:09 22/10/2026 (Live Crawl)",
+    "source": "Petrolimex",
     "prices": {
-        "ron95_3": 8825210,
-        "e5_ron92": 8825360,
-        "do_005s": 8829550
+        "ron95_3": 25210,
+        "e5_ron92": 25360,
+        "do_005s": 20346
     }
 }
