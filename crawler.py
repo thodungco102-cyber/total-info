@@ -1,76 +1,68 @@
 import json
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import datetime, timezone, timedelta
 import requests
 from bs4 import BeautifulSoup
-import re
 
-def crawl_fuel_data_via_proxy():
-    # Giá trị dự phòng an toàn phòng khi mất kết nối mạng tạm thời
-    prices = {
-        "ron95_3": 5525210,
-        "e5_ron92": 5525360,
-        "do_005s": 5529550
+URL = "https://www.petrolimex.com.vn/"
+
+def extract_number(text):
+    text = text.replace(".", "").replace(",", "")
+    m = re.search(r"\d{4,6}", text)
+    return int(m.group()) if m else None
+
+def crawl_petrolimex():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.petrolimex.com.vn/"
     }
     
-    # Trang đích chính thống cần lấy dữ liệu
-    target_url = "https://www.pvoil.com.vn/tin-gia-xang-dau"
+    r = requests.get(URL, headers=headers, timeout=20)
+    r.raise_for_status()
     
-    # Sử dụng dịch vụ Proxy công khai để vượt qua tường lửa chặn IP của GitHub Actions
-    proxy_url = f"https://api.allorigins.win/raw?url={target_url}"
+    soup = BeautifulSoup(r.text, "html.parser")
+    text = soup.get_text(" ", strip=True)
     
-    try:
-        response = requests.get(proxy_url, timeout=15)
-        
-        if response.status_code == 200:
-            html_content = response.text
-            soup = BeautifulSoup(html_content, 'html.parser')
-            rows = soup.find_all('tr')
-            found_count = 0
+    prices = {
+        "ron95_3": None,
+        "e5_ron92": None,
+        "do_005s": None
+    }
+    
+    # Biểu thức chính quy quét dữ liệu giá trên trang
+    patterns = {
+        "ron95_3": r"RON\s*95[^\d]*(\d{2}[.,]\d{3})",
+        "e5_ron92": r"E5[^\d]*RON\s*92[^\d]*(\d{2}[.,]\d{3})",
+        "do_005s": r"DO\s*0[.,]05S[^\d]*(\d{2}[.,]\d{3})",
+    }
+    
+    for key, pattern in patterns.items():
+        m = re.search(pattern, text, flags=re.I)
+        if m:
+            prices[key] = extract_number(m.group(1))
             
-            for row in rows:
-                row_text = row.get_text()
-                if any(k in row_text.upper() for k in ['RON 95', 'E5', 'DO', 'DIESEL']):
-                    cols = row.find_all(['td', 'th'])
-                    if len(cols) >= 2:
-                        name = cols[0].get_text().strip().upper()
-                        val_str = cols[1].get_text().strip()
-                        clean_val = re.sub(r'[^\d]', '', val_str)
-                        
-                        if clean_val.isdigit() and len(clean_val) >= 4:
-                            val = int(clean_val)
-                            if 'RON 95' in name or 'RON95' in name:
-                                prices["ron95_3"] = val
-                                found_count += 1
-                            elif 'E5' in name:
-                                prices["e5_ron92"] = val
-                                found_count += 1
-                            elif 'DO' in name or 'DIESEL' in name:
-                                prices["do_005s"] = val
-                                found_count += 1
-                                
-            if found_count > 0:
-                print(f"Cào thành công {found_count} chỉ số trực tuyến qua Proxy từ PVOIL!")
-            else:
-                print("Không tìm thấy khớp lệnh trong HTML, sử dụng giá trị hiện hành.")
-        else:
-            print(f"Proxy phản hồi mã lỗi: {response.status_code}")
-            
-    except Exception as e:
-        print(f"Lỗi kết nối khi cào dữ liệu: {e}")
-        raise e
+    return prices
 
-    # Đồng bộ chuẩn giờ Việt Nam (GMT+7)
+def save_data(prices):
     vn_tz = timezone(timedelta(hours=7))
-    now_vn = datetime.now(vn_tz)
-    updated_str = f"{now_vn.strftime('%H:%M %d/%m/%Y')} (Proxy Live Crawl)"
-
-    return {
-        "updated_at": updated_str,
+    data = {
+        "updated_at": datetime.now(vn_tz).strftime("%H:%M %d/%m/%Y (Live Crawl)"),
+        "source": "Petrolimex",
         "prices": prices
     }
+    with open("fuel_data.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    print("Đã cập nhật thành công file fuel_data.json")
 
 if __name__ == "__main__":
-    fuel_data = crawl_fuel_data_via_proxy()
-    with open("fuel_data.json", "w", encoding="utf-8") as f:
-        json.dump(fuel_data, f, ensure_ascii=False, indent=4)
-    print("Đã cập nhật file fuel_data.json thành công!")
+    try:
+        prices = crawl_petrolimex()
+        # Nếu thiếu dữ liệu do thay đổi cấu trúc web, ném lỗi để giữ nguyên trạng thái an toàn
+        if not all(prices.values()):
+            raise Exception("Không bóc tách được đầy đủ các chỉ số giá xăng dầu!")
+        save_data(prices)
+    except Exception as e:
+        print("Lỗi Crawler:", e)
+        raise e
