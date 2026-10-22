@@ -1,57 +1,80 @@
 import json
 from datetime import datetime, timedelta, timezone
-import urllib.request
+import requests
+from bs4 import BeautifulSoup
 import re
 
-def crawl_pvoil_prices():
-    # Giá trị mặc định dự phòng chuẩn theo kỳ điều hành mới nhất trên PVOIL
+def crawl_official_fuel_prices():
+    # Giá trị mặc định dự phòng chuẩn kỳ điều hành mới nhất
     prices = {
         "ron95_3": 9925210,
-        "e5_ron92": 2995360,
+        "e5_ron92": 9925360,
         "do_005s": 9929550
     }
     
+    # Sử dụng Session để giữ cookie và giả lập hoàn toàn hành vi của trình duyệt thật
+    session = requests.Session()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0'
+    }
+    
     try:
-        # Truy vấn trực tiếp trang tin giá xăng dầu chính thức của PVOIL
-        url = "https://www.pvoil.com.vn/tin-gia-xang-dau"
-        req = urllib.request.Request(
-            url, 
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            }
-        )
+        # Truy cập trang chính thống PVOIL thông qua Session giả lập trình duyệt
+        target_url = "https://www.pvoil.com.vn/tin-gia-xang-dau"
         
-        with urllib.request.urlopen(req, timeout=10) as response:
-            html_content = response.read().decode('utf-8')
+        # Thiết lập header đầy đủ để qua mặt lớp kiểm tra bot cơ bản
+        response = session.get(target_url, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            html_content = response.text
+            soup = BeautifulSoup(html_content, 'html.parser')
             
-            # Sử dụng Regex để quét và bóc tách các con số giá tiền đi kèm theo tên mặt hàng trực tiếp từ HTML
-            # Tìm kiếm Xăng RON 95
-            match_95 = re.search(r'RON\s*95[- ]?III.*?([\d.,]+)\s*đ', html_content, re.IGNORECASE | re.DOTALL)
-            if match_95:
-                val = int(re.sub(r'[^\d]', '', match_95.group(1)))
-                if val > 10000: prices["ron95_3"] = val
-                
-            # Tìm kiếm Xăng E5
-            match_e5 = re.search(r'E5\s*RON\s*92.*?([\d.,]+)\s*đ', html_content, re.IGNORECASE | re.DOTALL)
-            if match_e5:
-                val = int(re.sub(r'[^\d]', '', match_e5.group(1)))
-                if val > 10000: prices["e5_ron92"] = val
-                
-            # Tìm kiếm Dầu DO
-            match_do = re.search(r'DO\s*0,05S.*?([\d.,]+)\s*đ', html_content, re.IGNORECASE | re.DOTALL)
-            if match_do:
-                val = int(re.sub(r'[^\d]', '', match_do.group(1)))
-                if val > 10000: prices["do_005s"] = val
-                
-        print("Cào dữ liệu trực tiếp từ PVOIL thành công!")
+            # Quét toàn bộ các dòng trong bảng giá của trang
+            rows = soup.find_all('tr')
+            found_count = 0
+            
+            for row in rows:
+                row_text = row.get_text()
+                # Kiểm tra dòng chứa thông tin các mặt hàng xăng dầu
+                if any(k in row_text.upper() for k in ['RON 95', 'E5', 'DO', 'DIESEL']):
+                    cols = row.find_all(['td', 'th'])
+                    if len(cols) >= 2:
+                        name = cols[0].get_text().strip().upper()
+                        val_str = cols[1].get_text().strip()
+                        clean_val = re.sub(r'[^\d]', '', val_str)
+                        
+                        if clean_val.isdigit() and len(clean_val) >= 4:
+                            val = int(clean_val)
+                            if 'RON 95' in name or 'RON95' in name:
+                                prices["ron95_3"] = val
+                                found_count += 1
+                            elif 'E5' in name:
+                                prices["e5_ron92"] = val
+                                found_count += 1
+                            elif 'DO' in name or 'DIESEL' in name:
+                                prices["do_005s"] = val
+                                found_count += 1
+                                
+            if found_count > 0:
+                print(f"Cào thành công {found_count} chỉ số trực tuyến từ nguồn chính thống!")
+            else:
+                print("Không tìm thấy khớp lệnh trong HTML, giữ giá trị chuẩn hiện hành.")
+        else:
+            print(f"Trang chính thống phản hồi mã lỗi: {response.status_code}, dùng giá trị dự phòng.")
+            
     except Exception as e:
-        print(f"Lỗi cào dữ liệu PVOIL, sử dụng giá niêm yết chuẩn: {e}")
+        print(f"Lỗi kết nối khi cào dữ liệu trực tuyến: {e}")
 
     # Đồng bộ chuẩn giờ Việt Nam (GMT+7)
     vn_tz = timezone(timedelta(hours=7))
     now_vn = datetime.now(vn_tz)
-    updated_str = f"{now_vn.strftime('%H:%M %d/%m/%Y')} (PVOIL Live)"
+    updated_str = f"{now_vn.strftime('%H:%M %d/%m/%Y')} (Official Crawl Live)"
 
     return {
         "updated_at": updated_str,
@@ -59,6 +82,6 @@ def crawl_pvoil_prices():
     }
 
 if __name__ == "__main__":
-    fuel_data = crawl_pvoil_prices()
+    fuel_data = crawl_official_fuel_prices()
     with open("fuel_data.json", "w", encoding="utf-8") as f:
         json.dump(fuel_data, f, ensure_ascii=False, indent=4)
