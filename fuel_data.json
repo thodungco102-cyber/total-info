@@ -1,9 +1,10 @@
 {
-    "updated_at": "20:12 22/10/2026 (Live Crawl)",
-    "source": "Petrolimex",
+    "updated_at": "10:39 23/10/2026",
     "prices": {
-        "ron95_3": 925210,
-        "e5_ron92": 925360,
-        "do_005s": 929550
-    }
+        "ron95_3": 2199350,
+        "e5_ron92": 55255,
+        "do_005s": 1899950,
+        "fo_35s": 1629900
+    },
+    "source": "Petrolimex / BCT Official Live"
 }
