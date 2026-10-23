@@ -3,9 +3,8 @@ import re
 from datetime import datetime
 import pytz
 import requests
-import xml.etree.ElementTree as ET
 
-def fetch_fuel_from_rss_and_news():
+def get_fuel_prices():
     tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
     now_vn = datetime.now(tz_vn)
     
@@ -24,76 +23,43 @@ def fetch_fuel_from_rss_and_news():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     }
 
-    # =========================================================================
-    # NGUỒN 1: BÓC TÁCH RSS BÁO KINH TẾ / BÁO LAO ĐỘNG / VNEXPRESS
-    # =========================================================================
-    rss_urls = [
-        "https://laodong.vn/rss/kinh-te.rss",
-        "https://vnexpress.net/rss/kinh-doanh.rss",
-        "https://tuoitre.vn/rss/kinh-doanh.rss"
-    ]
+    try:
+        news_url = "https://vietnamnet.vn/kinh-doanh/thi-truong"
+        res = requests.get(news_url, headers=headers, timeout=10)
+        
+        if res.status_code == 200:
+            html = res.text
+            
+            # Tìm tất cả các chuỗi số có dạng giá tiền (ví dụ: 21.350 hoặc 21350) nằm gần từ khóa
+            # Lọc khắt khe: Giá xăng dầu phải nằm trong khoảng từ 15,000 đến 35,000 VNĐ
+            
+            def parse_valid_price(text_snippet):
+                numbers = re.findall(r'([\d\.]{5,7})', text_snippet)
+                for num_str in numbers:
+                    clean_val = int(num_str.replace('.', '').replace(',', ''))
+                    if 15000 <= clean_val <= 35000: # Khoảng giá chuẩn của xăng dầu VN
+                        return clean_val
+                return 666888
 
-    fetched = False
+            # Cắt các đoạn văn bản chứa từ khóa xăng dầu để quét chính xác hơn
+            for line in html.split('\n'):
+                line_upper = line.upper()
+                if "RON 95" in line_upper or "RON95" in line_upper:
+                    val = parse_valid_price(line)
+                    if val != 666888: fuel_data["prices"]["ron95_3"] = val
+                elif "E5" in line_upper or "RON 92" in line_upper:
+                    val = parse_valid_price(line)
+                    if val != 666888: fuel_data["prices"]["e5_ron92"] = val
+                elif "DIESEL" in line_upper or "DO 0" in line_upper:
+                    val = parse_valid_price(line)
+                    if val != 666888: fuel_data["prices"]["do_005s"] = val
 
-    for url in rss_urls:
-        if fetched: break
-        try:
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code == 200:
-                # Đọc XML RSS
-                root = ET.fromstring(res.content)
-                for item in root.findall('.//item'):
-                    title = item.find('title').text if item.find('title') is not None else ""
-                    desc = item.find('description').text if item.find('description') is not None else ""
-                    content = f"{title} {desc}"
+            if fuel_data["prices"]["ron95_3"] != 666888 or fuel_data["prices"]["e5_ron92"] != 666888:
+                fuel_data["source"] = "VietNamNet Filtered Live"
+                print("=> [Thành công] Lọc và bóc tách thành công giá xăng dầu chuẩn!")
 
-                    # Nếu bài viết nói về điều hành giá xăng dầu
-                    if any(k in content.lower() for k in ["giá xăng", "petrolimex", "ron 95", "e5 ron 92"]):
-                        # RegEx bóc tách các con số giá thực tế (VD: 21.350 đồng/lít hoặc 21350)
-                        ron_m = re.search(r'RON\s*95[^\d]*([\d\.]{5,6})', content, re.I)
-                        e5_m = re.search(r'E5[^\d]*([\d\.]{5,6})', content, re.I)
-                        do_m = re.search(r'dầu\s*diesel[^\d]*([\d\.]{5,6})', content, re.I)
-
-                        if ron_m:
-                            val = int(ron_m.group(1).replace('.', ''))
-                            if 15000 <= val <= 35000: fuel_data["prices"]["ron95_3"] = val; fetched = True
-                        if e5_m:
-                            val = int(e5_m.group(1).replace('.', ''))
-                            if 15000 <= val <= 35000: fuel_data["prices"]["e5_ron92"] = val; fetched = True
-                        if do_m:
-                            val = int(do_m.group(1).replace('.', ''))
-                            if 15000 <= val <= 35000: fuel_data["prices"]["do_005s"] = val; fetched = True
-
-                        if fetched:
-                            fuel_data["source"] = f"RSS News Live ({url.split('/')[2]})"
-                            print(f"=> [Thành công] Bóc tách giá từ RSS: {url}")
-                            break
-        except Exception as e:
-            print(f"Lỗi đọc RSS {url}: {e}")
-
-    # =========================================================================
-    # NGUỒN 2: BÓC TÁCH TRỰC TIẾP TỪ TRANG THỊ TRƯỜNG BÁO CHÍ (FALLBACK)
-    # =========================================================================
-    if not fetched:
-        try:
-            # Quét trang tin tức tổng hợp giá thị trường
-            news_res = requests.get("https://vietnamnet.vn/kinh-doanh/thi-truong", headers=headers, timeout=8)
-            if news_res.status_code == 200:
-                html = news_res.text
-                ron_m = re.search(r'RON\s*95-III[^\d]*([\d\.]{5,6})', html, re.I)
-                e5_m = re.search(r'E5\s*RON\s*92[^\d]*([\d\.]{5,6})', html, re.I)
-                do_m = re.search(r'dầu\s*diesel[^\d]*([\d\.]{5,6})', html, re.I)
-
-                if ron_m: fuel_data["prices"]["ron95_3"] = int(ron_m.group(1).replace('.', ''))
-                if e5_m: fuel_data["prices"]["e5_ron92"] = int(e5_m.group(1).replace('.', ''))
-                if do_m: fuel_data["prices"]["do_005s"] = int(do_m.group(1).replace('.', ''))
-
-                if fuel_data["prices"]["ron95_3"] != 666888:
-                    fuel_data["source"] = "VietNamNet Market Live"
-                    fetched = True
-                    print("=> [Thành công] Bóc tách từ VietNamNet Market!")
-        except Exception as e:
-            print(f"Lỗi đọc tin tức: {e}")
+    except Exception as e:
+        print(f"Lỗi khi cào dữ liệu: {e}")
 
     # Ghi kết quả ra file JSON
     with open('fuel_data.json', 'w', encoding='utf-8') as f:
@@ -102,4 +68,4 @@ def fetch_fuel_from_rss_and_news():
     print(f"\n===> KẾT QUẢ CUỐI CÙNG:\n{json.dumps(fuel_data, ensure_ascii=False, indent=2)}")
 
 if __name__ == "__main__":
-    fetch_fuel_from_rss_and_news()
+    get_fuel_prices()
